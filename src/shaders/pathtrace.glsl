@@ -150,14 +150,8 @@ bool ClosestHit(Ray r, inout State state)
     bool BLAS = false;
 
     ivec3 triID = ivec3(-1);
-    mat4 transMat;
-    mat4 transform;
     vec3 bary;
     vec4 vert0, vert1, vert2;
-
-    Ray rTrans;
-    rTrans.origin = r.origin;
-    rTrans.direction = r.direction;
 
     while (index != -1)
     {
@@ -179,15 +173,15 @@ bool ClosestHit(Ray r, inout State state)
 
                 vec3 e0 = v1.xyz - v0.xyz;
                 vec3 e1 = v2.xyz - v0.xyz;
-                vec3 pv = cross(rTrans.direction, e1);
+                vec3 pv = cross(r.direction, e1);
                 float det = dot(e0, pv);
 
-                vec3 tv = rTrans.origin - v0.xyz;
+                vec3 tv = r.origin - v0.xyz;
                 vec3 qv = cross(tv, e0);
 
                 vec4 uvt;
                 uvt.x = dot(tv, pv);
-                uvt.y = dot(rTrans.direction, qv);
+                uvt.y = dot(r.direction, qv);
                 uvt.z = dot(e1, qv);
                 uvt.xyz = uvt.xyz / det;
                 uvt.w = 1.0 - uvt.x - uvt.y;
@@ -199,22 +193,11 @@ bool ClosestHit(Ray r, inout State state)
                     state.matID = currMatID;
                     bary = uvt.wxy;
                     vert0 = v0, vert1 = v1, vert2 = v2;
-                    transform = transMat;
                 }
             }
         }
         else if (leaf < 0) // Leaf node of TLAS
         {
-            vec4 r1 = texelFetch(transformsTex, ivec2((-leaf - 1) * 4 + 0, 0), 0).xyzw;
-            vec4 r2 = texelFetch(transformsTex, ivec2((-leaf - 1) * 4 + 1, 0), 0).xyzw;
-            vec4 r3 = texelFetch(transformsTex, ivec2((-leaf - 1) * 4 + 2, 0), 0).xyzw;
-            vec4 r4 = texelFetch(transformsTex, ivec2((-leaf - 1) * 4 + 3, 0), 0).xyzw;
-
-            transMat = mat4(r1, r2, r3, r4);
-
-            rTrans.origin = vec3(inverse(transMat) * vec4(r.origin, 1.0));
-            rTrans.direction = vec3(inverse(transMat) * vec4(r.direction, 0.0));
-
             // Add a marker. We'll return to this spot after we've traversed the entire BLAS
             stack[ptr++] = -1;
             index = leftIndex;
@@ -224,8 +207,8 @@ bool ClosestHit(Ray r, inout State state)
         }
         else
         {
-            leftHit = AABBIntersect(texelFetch(BVH, leftIndex * 3 + 0).xyz, texelFetch(BVH, leftIndex * 3 + 1).xyz, rTrans);
-            rightHit = AABBIntersect(texelFetch(BVH, rightIndex * 3 + 0).xyz, texelFetch(BVH, rightIndex * 3 + 1).xyz, rTrans);
+            leftHit = AABBIntersect(texelFetch(BVH, leftIndex * 3 + 0).xyz, texelFetch(BVH, leftIndex * 3 + 1).xyz, r);
+            rightHit = AABBIntersect(texelFetch(BVH, rightIndex * 3 + 0).xyz, texelFetch(BVH, rightIndex * 3 + 1).xyz, r);
 
             if (leftHit > 0.0 && rightHit > 0.0)
             {
@@ -263,9 +246,6 @@ bool ClosestHit(Ray r, inout State state)
             BLAS = false;
 
             index = stack[--ptr];
-
-            rTrans.origin = r.origin;
-            rTrans.direction = r.direction;
         }
     }
 
@@ -282,14 +262,7 @@ bool ClosestHit(Ray r, inout State state)
         vec4 n1 = texelFetch(normalsTex, triID.y);
         vec4 n2 = texelFetch(normalsTex, triID.z);
 
-        vec2 t0 = vec2(vert0.w, n0.w);
-        vec2 t1 = vec2(vert1.w, n1.w);
-        vec2 t2 = vec2(vert2.w, n2.w);
-
-        vec3 normal = normalize(n0.xyz * bary.x + n1.xyz * bary.y + n2.xyz * bary.z);
-
-        state.normal = normalize(transpose(inverse(mat3(transform))) * normal);
-        state.ffnormal = dot(state.normal, r.direction) <= 0.0 ? state.normal : -state.normal;
+        state.normal = normalize(n0.xyz * bary.x + n1.xyz * bary.y + n2.xyz * bary.z);
     }
 
     return true;
